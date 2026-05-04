@@ -1,5 +1,4 @@
 import logging
-import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -29,7 +28,7 @@ rotate_idx = 0
 # ─── /start command ────────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚀 فتح نت باشا", web_app={"url": APP_URL})],
+        [InlineKeyboardButton("🚀 فتح نت باشا", url=APP_URL)],
         [InlineKeyboardButton("📢 قناة الأخبار", url=CHAN_URL)],
     ])
     await update.message.reply_text(
@@ -38,7 +37,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard,
     )
 
-# ─── rotating channel message job ─────────────────────────────────────────
+# ─── rotating channel message ──────────────────────────────────────────────
 async def send_rotating(context: ContextTypes.DEFAULT_TYPE):
     global rotate_idx
     msg = MSGS[rotate_idx % len(MSGS)]
@@ -53,14 +52,8 @@ async def send_rotating(context: ContextTypes.DEFAULT_TYPE):
 # ─── main ──────────────────────────────────────────────────────────────────
 def main():
     app = Application.builder().token(TOKEN).build()
-
-    # commands
     app.add_handler(CommandHandler("start", start))
-
-    # send rotating message to channel every 6 hours
-    job_queue = app.job_queue
-    job_queue.run_repeating(send_rotating, interval=21600, first=10)
-
+    app.job_queue.run_repeating(send_rotating, interval=21600, first=10)
     logger.info("Bot is running...")
     app.run_polling(drop_pending_updates=True)
 
