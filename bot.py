@@ -28,11 +28,11 @@ rotate_idx = 0
 # ─── /start command ────────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚀 فتح نت باشا", url=APP_URL)],
-        [InlineKeyboardButton("📢 قناة الأخبار", url=CHAN_URL)],
+        [InlineKeyboardButton("🚀 فتح نت باشا", url="https://t.me/NetbashaBot/netbasha")],
+        [InlineKeyboardButton("📢 قناة الأخبار", url="https://t.me/netbasha")],
     ])
     await update.message.reply_text(
-        "🎬 *نت باشا*\n\nأفلام • قنوات • رياضة • أنمي • موسيقى • طبخ • صحة • كتب • تقنية\n\n👇 اختر من القائمة",
+        "🎬 *نت باشا*\n\nأفلام • قنوات • رياضة\n\n👇 اختر من القائمة",
         parse_mode="Markdown",
         reply_markup=keyboard,
     )
