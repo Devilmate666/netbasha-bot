@@ -1,5 +1,5 @@
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 logging.basicConfig(level=logging.INFO)
@@ -27,7 +27,7 @@ rotate_idx = 0
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚀 فتح نت باشا", web_app=WebAppInfo(url="https://netbasha.satanhisham.workers.dev"))],
+        [InlineKeyboardButton("🚀 فتح نت باشا", url=APP_URL)],
         [InlineKeyboardButton("📢 قناة الأخبار", url=CHAN_URL)],
     ])
     await update.message.reply_text(
@@ -50,7 +50,7 @@ async def send_rotating(context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.job_queue.run_repeating(send_rotating, interval=21600, first=10)
+    app.job_queue.run_repeating(send_rotating, interval=21600, first=60)
     logger.info("Bot is running...")
     app.run_polling(drop_pending_updates=True, allowed_updates=["message"])
 
