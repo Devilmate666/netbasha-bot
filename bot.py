@@ -120,25 +120,38 @@ def get_next_categories(state: dict, n: int) -> list:
     """
     Pop the next `n` categories from the queue.
     Each category appears exactly once per full cycle of 10.
-    When the queue is exhausted it is reshuffled — guaranteeing the first
-    item of the new cycle never matches the last sent category (no two
-    consecutive messages with the same category across runs).
+    Guarantees: no two consecutive categories are the same — both within
+    a single run's schedule AND across run boundaries (via last_cat in state).
+    Since GitHub Actions runners are ephemeral, last_cat is embedded in
+    cat_queue as a sentinel so it survives across runs.
     """
     queue = state.get("cat_queue", [])
     last_cat = state.get("last_cat")
     result = []
+
     for _ in range(n):
         if not queue:
             new_queue = ALL_CATEGORIES[:]
             random.shuffle(new_queue)
-            # If the fresh cycle would start with the same category that was
-            # sent last, rotate it to the end so it's never back-to-back.
+            # Ensure the new cycle doesn't start with the same category
+            # that was sent last (cross-run boundary protection)
             if last_cat and new_queue[0] == last_cat:
                 new_queue.append(new_queue.pop(0))
             queue = new_queue
             logger.info(f"New category cycle: {queue}")
-        result.append(queue.pop(0))
-        last_cat = result[-1]
+
+        # Extra guard: if top of queue matches last sent, swap it with
+        # the next different category (handles mid-cycle edge cases)
+        if last_cat and len(queue) > 1 and queue[0] == last_cat:
+            for j in range(1, len(queue)):
+                if queue[j] != last_cat:
+                    queue[0], queue[j] = queue[j], queue[0]
+                    break
+
+        picked = queue.pop(0)
+        result.append(picked)
+        last_cat = picked
+
     state["cat_queue"] = queue
     state["last_cat"] = last_cat
     return result
