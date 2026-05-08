@@ -23,5 +23,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Restore bot state
+        uses: actions/download-artifact@v4
+        with:
+          name: bot-state
+          path: /tmp/
+        continue-on-error: true  # first run won't have a saved state
+
       - name: Run bot
         run: timeout 17000 python bot.py || true
+
+      - name: Save bot state
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bot-state
+          path: /tmp/bot_state.json
+          retention-days: 7
+          overwrite: true
