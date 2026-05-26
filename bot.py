@@ -3,7 +3,7 @@ import random
 import json
 import os
 import re
-import feedparser
+import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ChatMemberHandler, ContextTypes
 
@@ -15,22 +15,24 @@ CHANNEL  = "-1003989153913"
 APP_URL  = "https://t.me/NetbashaBot/netbasha"
 CHAN_URL = "https://t.me/netbasha"
 
-# ─── Google News RSS queries per category ───────────────────────────────────────
-# Each entry: (Arabic search query, emoji prefix, Arabic label)
+NEWS_API_KEY = os.environ.get("NEWS_API_KEY", "")
+
+# ─── NewsAPI queries per category ───────────────────────────────────────────────
+# (newsapi keyword/query,  emoji,  Arabic label)
 CATEGORY_NEWS = {
-    "movies":  ("أفلام مسلسلات",       "🎬", "أفلام ومسلسلات"),
-    "live":    ("أخبار عاجلة",          "📺", "أخبار مباشرة"),
-    "sports":  ("رياضة كرة قدم",        "⚽", "رياضة"),
-    "anime":   ("انمي أنيمي",           "🎌", "أنمي"),
-    "music":   ("موسيقى أغاني عربية",   "🎵", "موسيقى"),
-    "cooking": ("وصفات طبخ",            "🍲", "طبخ ووصفات"),
-    "health":  ("صحة لياقة",            "💊", "صحة ولياقة"),
-    "social":  ("تواصل اجتماعي ترندات", "📱", "تواصل اجتماعي"),
-    "books":   ("كتب روايات",           "📚", "كتب وروايات"),
-    "tech":    ("تقنية ذكاء اصطناعي",   "💻", "تقنية وذكاء اصطناعي"),
+    "movies":  ("movies OR series OR cinema OR مسلسل OR فيلم",   "🎬", "أفلام ومسلسلات"),
+    "live":    ("breaking news OR عاجل",                          "📺", "أخبار مباشرة"),
+    "sports":  ("football OR soccer OR sports OR كرة قدم",        "⚽", "رياضة"),
+    "anime":   ("anime OR أنيمي OR انمي",                         "🎌", "أنمي"),
+    "music":   ("music OR أغاني OR موسيقى",                       "🎵", "موسيقى"),
+    "cooking": ("cooking OR recipes OR طبخ OR وصفات",             "🍲", "طبخ ووصفات"),
+    "health":  ("health OR fitness OR صحة OR لياقة",              "💊", "صحة ولياقة"),
+    "social":  ("social media OR trends OR تواصل اجتماعي",        "📱", "تواصل اجتماعي"),
+    "books":   ("books OR novels OR كتب OR روايات",               "📚", "كتب وروايات"),
+    "tech":    ("technology OR AI OR artificial intelligence OR تقنية OR ذكاء اصطناعي", "💻", "تقنية وذكاء اصطناعي"),
 }
 
-# ─── Fallback static messages (used only when RSS fails) ────────────────────────
+# ─── Fallback static messages ────────────────────────────────────────────────────
 CATEGORY_MSGS = {
     "movies": [
         "🎬 *أفلام ومسلسلات لكل الأذواق*\n\n*نت باشا* يجمع لك أحدث الأفلام والمسلسلات العربية والعالمية في مكان واحد — بجودة عالية وبدون إعلانات مزعجة 🍿\n\n👉 [افتح نت باشا الآن](" + APP_URL + ")",
@@ -129,63 +131,82 @@ def get_next_categories(state: dict, n: int) -> list:
     state["last_cat"] = last_cat
     return result
 
-# ─── News fetching ───────────────────────────────────────────────────────────────
-
-def _clean_html(text: str) -> str:
-    """Strip HTML tags from a string."""
-    return re.sub(r"<[^>]+>", "", text).strip()
+# ─── News fetching via NewsAPI ───────────────────────────────────────────────────
 
 def fetch_news_post(category: str, state: dict) -> str:
-    """
-    Fetch a fresh news headline from Google News RSS for the given category.
-    Tracks which articles have already been used (by URL) so the same headline
-    is never posted twice in the same cycle.  Falls back to a static message
-    if the feed is empty or unavailable.
-    """
-    query, emoji, label = CATEGORY_NEWS[category]
+    """Fetch a real news headline from NewsAPI for the category."""
+    if not NEWS_API_KEY:
+        logger.warning("NEWS_API_KEY not set — using fallback.")
+        return _fallback_message(category, state)
 
-    # Per-category set of already-used article URLs
+    query, emoji, label = CATEGORY_NEWS[category]
     used_urls: list = state.setdefault("used_news", {}).get(category, [])
 
     try:
-        rss_url = (
-            f"https://news.google.com/rss/search"
-            f"?q={query.replace(' ', '+')}&hl=ar&gl=AE&ceid=AE:ar"
+        resp = requests.get(
+            "https://newsapi.org/v2/everything",
+            params={
+                "q":        query,
+                "language": "ar",
+                "sortBy":   "publishedAt",
+                "pageSize": 20,
+                "apiKey":   NEWS_API_KEY,
+            },
+            timeout=10,
         )
-        feed = feedparser.parse(rss_url)
-        entries = feed.entries
+        resp.raise_for_status()
+        articles = resp.json().get("articles", [])
 
-        if not entries:
-            raise ValueError("Empty feed")
+        if not articles:
+            # fallback to English if no Arabic articles found
+            resp2 = requests.get(
+                "https://newsapi.org/v2/everything",
+                params={
+                    "q":        query,
+                    "sortBy":   "publishedAt",
+                    "pageSize": 20,
+                    "apiKey":   NEWS_API_KEY,
+                },
+                timeout=10,
+            )
+            resp2.raise_for_status()
+            articles = resp2.json().get("articles", [])
 
-        # Pick the first entry whose URL hasn't been used yet
+        if not articles:
+            raise ValueError("No articles returned")
+
+        # Pick first article not already used
         chosen = None
-        for entry in entries[:15]:          # look at top 15 at most
-            url = entry.get("link", "")
-            if url not in used_urls:
-                chosen = entry
+        for article in articles:
+            url = article.get("url", "")
+            if url not in used_urls and url != "https://removed.com":
+                chosen = article
                 break
 
-        # If all recent entries were already used, reset and take the first one
         if chosen is None:
             used_urls = []
-            chosen = entries[0]
+            chosen = articles[0]
 
-        title   = _clean_html(chosen.get("title", ""))
-        source  = chosen.get("source", {}).get("title", "")
-        url     = chosen.get("link", "")
+        title   = chosen.get("title", "").split(" - ")[0].strip()   # strip source suffix
+        source  = chosen.get("source", {}).get("name", "")
+        url     = chosen.get("url", "")
+        desc    = chosen.get("description") or ""
+        # trim description to ~100 chars
+        if len(desc) > 100:
+            desc = desc[:97] + "…"
 
-        # Mark this article as used
+        # Track used
         used_urls.append(url)
-        if len(used_urls) > 50:             # cap to avoid state bloat
+        if len(used_urls) > 50:
             used_urls = used_urls[-50:]
         state["used_news"][category] = used_urls
 
-        # Build Telegram Markdown message
         source_line = f"_المصدر: {source}_\n\n" if source else ""
+        desc_line   = f"{desc}\n\n" if desc else ""
         post = (
             f"{emoji} *{label}*\n\n"
             f"*{title}*\n\n"
+            f"{desc_line}"
             f"{source_line}"
             f"🔗 [اقرأ الخبر كاملاً]({url})\n\n"
             f"📲 تابع المزيد على *نت باشا* 👇\n"
@@ -195,11 +216,11 @@ def fetch_news_post(category: str, state: dict) -> str:
         return post
 
     except Exception as e:
-        logger.warning(f"[{category}] RSS fetch failed ({e}), using fallback.")
+        logger.warning(f"[{category}] NewsAPI failed ({e}), using fallback.")
         return _fallback_message(category, state)
 
+
 def _fallback_message(category: str, state: dict) -> str:
-    """Return a non-recently-used static fallback message for the category."""
     msgs = CATEGORY_MSGS[category]
     msg_used = state.setdefault("msg_used", {})
     used: list = msg_used.get(category, [])
@@ -247,7 +268,6 @@ async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 def main():
     state = load_state()
-
     schedule = get_next_categories(state, 5)
     save_state(state)
     logger.info(f"This run schedule: {schedule}")
@@ -257,9 +277,9 @@ def main():
     app.add_handler(ChatMemberHandler(welcome_new_member, ChatMemberHandler.CHAT_MEMBER))
 
     async def post_init(application: Application):
-        first_delay = 120           # 2 min after start
+        first_delay = 120
         for i, category in enumerate(schedule):
-            delay = first_delay + (i * 3600)   # 2, 62, 122, 182, 242 min
+            delay = first_delay + (i * 3600)
 
             def make_callback(cat):
                 async def callback(ctx: ContextTypes.DEFAULT_TYPE):
