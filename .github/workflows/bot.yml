@@ -11,6 +11,9 @@ jobs:
   run-bot:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write   # needed to push feed.json
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -33,6 +36,7 @@ jobs:
       - name: Run bot
         env:
           NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: timeout 17000 python bot.py || true
 
       - name: Save bot state
