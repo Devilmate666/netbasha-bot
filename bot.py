@@ -16,6 +16,11 @@ APP_URL  = "https://t.me/NetbashaBot/netbasha"
 CHAN_URL = "https://t.me/netbasha"
 
 NEWS_API_KEY = os.environ.get("NEWS_API_KEY", "")
+GH_TOKEN     = os.environ.get("GH_TOKEN", "")   # GitHub token to commit feed.json
+GH_REPO      = "Devilmate666/netbasha-bot"
+FEED_FILE    = "feed.json"
+FEED_PATH    = "/tmp/feed.json"
+MAX_FEED     = 50
 
 # ─── NewsAPI queries per category ───────────────────────────────────────────────
 # (newsapi keyword/query,  emoji,  Arabic label)
@@ -220,7 +225,81 @@ def fetch_news_post(category: str, state: dict) -> str:
         return _fallback_message(category, state)
 
 
-def _fallback_message(category: str, state: dict) -> str:
+def _load_feed() -> list:
+    if os.path.exists(FEED_PATH):
+        try:
+            with open(FEED_PATH) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return []
+
+def _save_feed(feed: list):
+    with open(FEED_PATH, "w") as f:
+        json.dump(feed, f, ensure_ascii=False, indent=2)
+
+def append_to_feed(post_text: str, article_url: str, category: str):
+    """Append the just-sent post to feed.json and push to GitHub."""
+    query, emoji, label = CATEGORY_NEWS[category]
+    lines = [l for l in post_text.split("\n") if l.strip()]
+    title = lines[0].replace("*", "").strip() if lines else label
+    desc  = " ".join(lines[1:3]).replace("*", "").replace("_", "").strip()[:160]
+
+    entry = {
+        "id":     f"{category}_{int(__import__('time').time())}",
+        "emoji":  emoji,
+        "title":  title,
+        "text":   desc,
+        "link":   article_url,
+        "date":   __import__('datetime').datetime.utcnow().isoformat() + "Z",
+        "pubMs":  int(__import__('time').time() * 1000),
+    }
+
+    feed = _load_feed()
+    feed.insert(0, entry)
+    feed = feed[:MAX_FEED]
+    _save_feed(feed)
+    logger.info(f"Feed updated ({len(feed)} entries).")
+
+    if GH_TOKEN:
+        _push_feed_to_github(feed)
+
+def _push_feed_to_github(feed: list):
+    """Commit the updated feed.json to the GitHub repo so the app can read it."""
+    import base64
+    api = f"https://api.github.com/repos/{GH_REPO}/contents/{FEED_FILE}"
+    headers = {
+        "Authorization": f"Bearer {GH_TOKEN}",
+        "Accept": "application/vnd.github+json",
+    }
+    # Get current SHA (needed for update)
+    sha = None
+    try:
+        r = requests.get(api, headers=headers, timeout=10)
+        if r.status_code == 200:
+            sha = r.json().get("sha")
+    except Exception:
+        pass
+
+    content = base64.b64encode(
+        json.dumps(feed, ensure_ascii=False, indent=2).encode()
+    ).decode()
+
+    payload = {
+        "message": "chore: update feed.json [bot]",
+        "content": content,
+    }
+    if sha:
+        payload["sha"] = sha
+
+    try:
+        r = requests.put(api, headers=headers, json=payload, timeout=15)
+        if r.status_code in (200, 201):
+            logger.info("feed.json pushed to GitHub.")
+        else:
+            logger.warning(f"GitHub push failed: {r.status_code} {r.text[:200]}")
+    except Exception as e:
+        logger.warning(f"GitHub push error: {e}")
     msgs = CATEGORY_MSGS[category]
     msg_used = state.setdefault("msg_used", {})
     used: list = msg_used.get(category, [])
@@ -291,6 +370,9 @@ def main():
                         parse_mode="Markdown",
                         disable_web_page_preview=True,
                     )
+                    # Save post to feed.json and push to GitHub
+                    article_url = state.get("used_news", {}).get(cat, [""])[-1] or ""
+                    append_to_feed(msg, article_url, cat)
                     logger.info(f"Sent [{cat}] post.")
                 return callback
 
