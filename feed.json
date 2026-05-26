@@ -1,20 +1,29 @@
 [
   {
-    "id": "sports_1779835907",
-    "emoji": "⚽",
-    "title": "⚽ رياضة",
-    "text": "باحتياطي 330 مليار قدم مكعب.. مصر تعلن كشفًا جديدًا للغاز في الصحراء الغربية أعلنت مصر عن كشف جديد للغاز في الصحراء الغربية عبر شركة عجيبة للبترول بالشراكة مع إ",
-    "link": "https://arabic.cnn.com/middle-east/article/2026/05/24/egypt-announces-new-gas-discovery-in-the-western-desert",
-    "date": "2026-05-26T22:51:47.490186Z",
-    "pubMs": 1779835907490
+    "id": "books_1779836210",
+    "emoji": "📚",
+    "title": "📚 كتب وروايات",
+    "text": "شاهد.. روايات سكان كاليفورنيا النازحين بسبب تسرب مواد كيميائية سامة يعيش آلاف السكان في جنوب كاليفورنيا حالة من القلق بعد أوامر إخلاء واسعة قرب منشأة تابعة لشرك",
+    "link": "https://arabic.cnn.com/world/video/2026/05/25/v194790-california-residents-displaced-toxic-chemical-leak",
+    "date": "2026-05-26T22:56:50.409526Z",
+    "pubMs": 1779836210409
   },
   {
-    "id": "movies_1779832307",
-    "emoji": "🎬",
-    "title": "🎬 أفلام ومسلسلات",
-    "text": "شاشة MAG 346CQDF E20 الجديدة من MSI تجلب ألعابا مزدوجة الوضع بمعدل 400 Hz للشاشات الاقتصادية فائقة الاتساع هذا الموضوع شاشة MAG 346CQDF E20 الجديدة من MSI تجلب ",
-    "link": "https://www.unlimit-tech.com/2026/05/%d8%b4%d8%a7%d8%b4%d8%a9-mag-346cqdf-e20-%d8%a7%d9%84%d8%ac%d8%af%d9%8a%d8%af%d8%a9-%d9%85%d9%86-msi-%d8%aa%d8%ac%d9%84%d8%a8-%d8%a3%d9%84%d8%b9%d8%a7%d8%a8%d8%a7-%d9%85%d8%b2%d8%af%d9%88%d8%ac%d8%a9/",
-    "date": "2026-05-26T21:51:47.487581Z",
-    "pubMs": 1779832307487
+    "id": "live_1779832610",
+    "emoji": "📺",
+    "title": "📺 أخبار مباشرة",
+    "text": "Breaking: Brad Scott sacked as Essendon coach Essendon sacks head coach Brad Scott as the Bombers languish at the bottom of the AFL ladder.",
+    "link": "https://www.abc.net.au/news/2026-05-26/essendon-part-ways-with-brad-scott-has-afl-head-coach/106721334",
+    "date": "2026-05-26T21:56:50.478855Z",
+    "pubMs": 1779832610478
+  },
+  {
+    "id": "tech_1779825410",
+    "emoji": "💻",
+    "title": "💻 تقنية وذكاء اصطناعي",
+    "text": "جوجل تكشف عن أدوات مصغّرة جديدة في Wear OS 7 لساعات Samsung Galaxy وغيرها هذا الموضوع جوجل تكشف عن أدوات مصغّرة جديدة في Wear OS 7 لساعات Samsung Galaxy وغيرها ",
+    "link": "https://www.unlimit-tech.com/2026/05/%d8%ac%d9%88%d8%ac%d9%84-%d8%aa%d9%83%d8%b4%d9%81-%d8%b9%d9%86-%d8%a3%d8%af%d9%88%d8%a7%d8%aa-%d9%85%d8%b5%d8%ba%d9%91%d8%b1%d8%a9-%d8%ac%d8%af%d9%8a%d8%af%d8%a9-%d9%81%d9%8a-wear-os-7-%d9%84%d8%b3/",
+    "date": "2026-05-26T19:56:50.501956Z",
+    "pubMs": 1779825410501
   }
 ]
