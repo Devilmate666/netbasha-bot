@@ -23,7 +23,8 @@ GH_TOKEN = os.environ.get("GH_TOKEN", "")
 GH_REPO  = "Devilmate666/netbasha-bot"
 FEED_FILE = "feed.json"
 FEED_PATH = "/tmp/feed.json"
-MAX_FEED  = 50
+MAX_FEED         = 200   # total entries kept in feed.json
+MAX_PER_CATEGORY = 20    # max entries per category (keeps all categories represented)
 
 STATE_FILE = "/tmp/bot_state.json"
 
@@ -406,23 +407,48 @@ def append_to_feed(post_text: str, article_url: str, category: str):
     emoji = cfg["emoji"]
     label = cfg["label"]
 
-    lines = [l for l in post_text.split("\n") if l.strip()]
-    title = lines[0].replace("*", "").strip() if lines else label
-    desc  = " ".join(lines[1:3]).replace("*", "").replace("_", "").strip()[:160]
+    # Strip Markdown marks and extract meaningful title + description
+    lines = [l.replace("*", "").replace("_", "").strip()
+             for l in post_text.split("\n") if l.strip()]
+    # Skip the first line if it's just the category label (e.g. "🎬 أفلام ومسلسلات")
+    title_line = lines[1] if len(lines) > 1 and label in (lines[0] if lines else "") else lines[0] if lines else label
+    title = title_line.strip() or label
+    # Description: next 1-2 non-link lines
+    desc_parts = []
+    for l in lines[2:]:
+        if l.startswith("🔗") or l.startswith("📲") or l.startswith("http") or l.startswith("["):
+            break
+        desc_parts.append(l)
+        if len(desc_parts) >= 2:
+            break
+    desc = " ".join(desc_parts).strip()[:200]
 
     entry = {
-        "id":    f"{category}_{int(time.time())}",
-        "emoji": emoji,
-        "title": title,
-        "text":  desc,
-        "link":  article_url,
-        "date":  datetime.datetime.utcnow().isoformat() + "Z",
-        "pubMs": int(time.time() * 1000),
+        "id":       f"{category}_{int(time.time())}",
+        "category": category,
+        "emoji":    emoji,
+        "label":    label,
+        "title":    title,
+        "text":     desc,
+        "link":     article_url,
+        "date":     datetime.datetime.utcnow().isoformat() + "Z",
+        "pubMs":    int(time.time() * 1000),
     }
 
     feed = _load_feed()
     feed.insert(0, entry)
-    feed = feed[:MAX_FEED]
+
+    # Keep at most MAX_PER_CATEGORY per category, then cap total
+    from collections import Counter
+    cat_counts: Counter = Counter()
+    pruned = []
+    for e in feed:
+        c = e.get("category", "")
+        if cat_counts[c] < MAX_PER_CATEGORY:
+            pruned.append(e)
+            cat_counts[c] += 1
+    feed = pruned[:MAX_FEED]
+
     _save_feed(feed)
     logger.info(f"Feed updated ({len(feed)} entries).")
 
