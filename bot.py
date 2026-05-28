@@ -277,7 +277,19 @@ async def send_notifications(context: ContextTypes.DEFAULT_TYPE):
         save_state(state)
         return
 
+    now = datetime.datetime.utcnow()
     for chat_id_str, user_data in list(users.items()):
+        # Skip users who joined less than 1 hour ago — their run_once handles the first message
+        joined_at = user_data.get("joined_at")
+        if joined_at:
+            try:
+                age = (now - datetime.datetime.fromisoformat(joined_at)).total_seconds()
+                if age < 3600:
+                    logger.info(f"Skipping {chat_id_str} — joined {int(age)}s ago, run_once pending.")
+                    continue
+            except Exception:
+                pass
+
         chat_id  = int(chat_id_str)
         category = pick_next_category(user_data)
         msg      = build_message(category, user_data)
