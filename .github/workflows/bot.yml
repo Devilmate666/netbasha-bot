@@ -7,6 +7,11 @@ on:
   schedule:
     - cron: '0 */5 * * *'  # restart every 5 hours
 
+# Prevent two runs from executing at the same time (avoids double notifications)
+concurrency:
+  group: bot-run
+  cancel-in-progress: false
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
@@ -16,31 +21,33 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Cache is more reliable than artifacts for state persistence.
+      # The key uses a fixed name so it is always restored and overwritten.
       - name: Restore bot state
-        uses: actions/download-artifact@v4
+        uses: actions/cache/restore@v4
         with:
-          name: bot-state
-          path: /tmp/
-        continue-on-error: true
+          path: /tmp/bot_state.json
+          key: bot-state-v1
+          restore-keys: |
+            bot-state-v1
 
       - name: Run bot
         run: timeout 17000 python bot.py || true
 
+      # Always save state, even if the bot crashed
       - name: Save bot state
-        uses: actions/upload-artifact@v4
         if: always()
+        uses: actions/cache/save@v4
         with:
-          name: bot-state
           path: /tmp/bot_state.json
-          retention-days: 7
-          overwrite: true
+          key: bot-state-v1-${{ github.run_id }}
