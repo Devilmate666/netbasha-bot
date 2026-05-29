@@ -37,8 +37,6 @@ CATEGORIES = {
 
 # ─── Exact send schedule (Syrian time UTC+3) ─────────────────────────────────
 # Each entry: (hour, minute, [categories])  — all times in Syria local time.
-# The bot schedules a run_daily job for each time; the job picks one category
-# from the paired list (shuffled round-robin) and sends it to all users.
 SCHEDULE = [
     # Morning  06:00 – 10:00  →  Health & Food
     ( 6,  0, ["health", "food"]),
@@ -62,11 +60,44 @@ SCHEDULE = [
     ( 2,  0, ["tech",   "books"]),
 ]
 
+SYRIA_UTC_OFFSET = 3  # UTC+3
+
+def syria_now() -> datetime.datetime:
+    """Return the current time in Syrian timezone (UTC+3)."""
+    return datetime.datetime.utcnow() + datetime.timedelta(hours=SYRIA_UTC_OFFSET)
+
 def utc_time(syria_hour: int, syria_minute: int) -> datetime.time:
     """Convert a Syria-local (UTC+3) time to UTC datetime.time for job scheduling."""
-    total = syria_hour * 60 + syria_minute - 180   # subtract 3 h
-    total %= 1440                                    # wrap around midnight
+    total = syria_hour * 60 + syria_minute - (SYRIA_UTC_OFFSET * 60)
+    total %= 1440
     return datetime.time(total // 60, total % 60)
+
+def slot_to_minutes(syria_hour: int, syria_minute: int) -> int:
+    """Convert Syria time to minutes-since-midnight for comparison."""
+    return syria_hour * 60 + syria_minute
+
+def get_current_slot_cats() -> list[str]:
+    """
+    Return the categories for the slot that SHOULD have fired most recently
+    in Syrian time, so a new user gets contextually appropriate content.
+    If it's before the first slot of the day, wrap to the last slot.
+    """
+    now_syria = syria_now()
+    current_minutes = now_syria.hour * 60 + now_syria.minute
+
+    best = None
+    best_minutes = -1
+    for h, m, cats in SCHEDULE:
+        slot_minutes = slot_to_minutes(h, m)
+        if slot_minutes <= current_minutes and slot_minutes > best_minutes:
+            best = cats
+            best_minutes = slot_minutes
+
+    if best is None:
+        # Before the first slot today — use the last slot from yesterday
+        best = SCHEDULE[-1][2]
+
+    return best
 
 
 # ─── Notification messages — 10 per category ─────────────────────────────────
@@ -413,23 +444,8 @@ CATEGORY_MSGS: dict[str, list] = {
         ),
         lambda url: (
             f"🏟️ *قنوات رياضية مباشرة*\n\n"
-            f"القنوات الرياضية المتخصصة في البث الحي متوفرة في قسم القنوات بـ *نت باشا* ⚽\n\n"
-            f"👉 [شاهد القنوات الرياضية]({url})"
-        ),
-        lambda url: (
-            f"🔴 *مشاهدة مباشرة بلا تأخير*\n\n"
-            f"قسم القنوات في *نت باشا* مصمم لتوفير بث مباشر بجودة مقبولة واستقرار جيد 📶\n\n"
-            f"👉 [افتح قسم القنوات]({url})"
-        ),
-        lambda url: (
-            f"🌐 *قنوات دولية بلغات متعددة*\n\n"
-            f"بعض القنوات الدولية بلغات مختلفة متاحة في قسم القنوات المباشرة بـ *نت باشا* 🗺️\n\n"
-            f"👉 [تصفح القنوات الدولية]({url})"
-        ),
-        lambda url: (
-            f"📺 *متابعة البرامج في وقتها*\n\n"
-            f"البث المباشر للقنوات يتيح لك متابعة البرامج والأخبار في وقتها المحدد عبر *نت باشا* ⏱️\n\n"
-            f"👉 [افتح القنوات المباشرة]({url})"
+            f"القنوات الرياضية المتخصصة في البث المباشر للمباريات جزء من قسم القنوات في *نت باشا* ⚽\n\n"
+            f"👉 [افتح القنوات الرياضية]({url})"
         ),
         lambda url: (
             f"🎬 *قنوات أفلام وسينما*\n\n"
@@ -439,6 +455,21 @@ CATEGORY_MSGS: dict[str, list] = {
         lambda url: (
             f"📡 *قنوات مباشرة على مدار الساعة*\n\n"
             f"قسم القنوات في *نت باشا* متاح للمشاهدة في أي وقت خلال اليوم أو الليل 🌙\n\n"
+            f"👉 [افتح قسم القنوات]({url})"
+        ),
+        lambda url: (
+            f"📺 *قنوات متخصصة ومتنوعة*\n\n"
+            f"قنوات الطبخ والسفر والوثائقيات موجودة أيضاً في قسم القنوات المباشرة بـ *نت باشا* 🌍\n\n"
+            f"👉 [تصفح القنوات المتخصصة]({url})"
+        ),
+        lambda url: (
+            f"🔴 *بث مباشر الآن*\n\n"
+            f"قنوات عديدة تبث مباشرة الآن في *نت باشا* — افتح التطبيق وشاهد ما يعجبك 📲\n\n"
+            f"👉 [شاهد البث المباشر]({url})"
+        ),
+        lambda url: (
+            f"📻 *قنوات إذاعية وتلفزيونية*\n\n"
+            f"مجموعة متنوعة من القنوات المختلفة تنتظرك في قسم القنوات المباشرة بـ *نت باشا* 🎙️\n\n"
             f"👉 [افتح قسم القنوات]({url})"
         ),
     ],
@@ -668,7 +699,7 @@ def pick_category_for_slot(user_data: dict, slot_cats: list[str]) -> str:
     shuffled each cycle. Each slot has its own independent queue so rotations
     don't interfere with each other.
     """
-    slot_key  = "|".join(sorted(slot_cats))   # stable key for this slot group
+    slot_key  = "|".join(sorted(slot_cats))
     queues    = user_data.setdefault("slot_queues", {})
     lasts     = user_data.setdefault("slot_last",   {})
     queue     = queues.get(slot_key, [])
@@ -709,14 +740,34 @@ def build_message(category: str, user_data: dict) -> str:
     return msg_list[idx](url)
 
 
+# ─── Track which slots have fired this bot run, to avoid double-fires ─────────
+_slots_fired_this_run: set[str] = set()
+
+
 # ─── Job: send one notification to all registered users ──────────────────────
 
 async def send_notifications(context: ContextTypes.DEFAULT_TYPE):
     """
     Fired at exact scheduled times. The paired categories are passed via
     context.job.data so no runtime clock-check is needed.
+
+    Guards against double-firing within the same run (e.g. if APScheduler
+    fires a past slot immediately on startup).
     """
     slot_cats = context.job.data   # e.g. ["health", "food"]
+    slot_key  = "|".join(sorted(slot_cats)) + "@" + context.job.name
+
+    # ── Double-fire guard ──────────────────────────────────────────────────────
+    # APScheduler can immediately trigger a run_daily job if its scheduled
+    # time has already passed today when the bot first starts.  We record
+    # each (slot, utc-date) pair and skip the duplicate.
+    fire_date = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    dedup_key = f"{slot_key}#{fire_date}"
+    if dedup_key in _slots_fired_this_run:
+        logger.info(f"Skipping duplicate fire for slot {context.job.name} on {fire_date}")
+        return
+    _slots_fired_this_run.add(dedup_key)
+    # ──────────────────────────────────────────────────────────────────────────
 
     state = load_state()
     users = get_users(state)
@@ -726,7 +777,10 @@ async def send_notifications(context: ContextTypes.DEFAULT_TYPE):
         return
 
     now = datetime.datetime.utcnow()
+    sent_count = 0
     for chat_id_str, user_data in list(users.items()):
+        # Skip users who joined less than 1 hour ago — they get a dedicated
+        # first_notification job instead.
         joined_at = user_data.get("joined_at")
         if joined_at:
             try:
@@ -747,10 +801,12 @@ async def send_notifications(context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown",
                 disable_web_page_preview=True,
             )
+            sent_count += 1
             logger.info(f"Notified user {chat_id} → [{category}]")
         except Exception as e:
             logger.warning(f"Failed to notify {chat_id}: {e}")
 
+    logger.info(f"Slot {context.job.name} done — notified {sent_count}/{len(users)} users.")
     save_state(state)
 
 
@@ -775,8 +831,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if is_new:
-        # Send first notification after 1 hour using the first scheduled slot's categories
-        first_cats = SCHEDULE[0][2]
+        # Schedule the first notification 1 hour from now.
+        # Use the categories that match the slot the user will land in
+        # after 1 hour — not hardcoded to 6 AM health/food.
+        future_time = syria_now() + datetime.timedelta(hours=1)
+        future_minutes = future_time.hour * 60 + future_time.minute
+
+        # Find the slot whose time is <= future_minutes (most recent before then)
+        first_cats = SCHEDULE[-1][2]  # default: last slot wraps around
+        best_minutes = -1
+        for h, m, cats in SCHEDULE:
+            sm = slot_to_minutes(h, m)
+            if sm <= future_minutes and sm > best_minutes:
+                first_cats = cats
+                best_minutes = sm
+
         context.job_queue.run_once(
             _first_notification,
             when=3600,
@@ -784,11 +853,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             data=first_cats,
             name=f"first_{chat_id}",
         )
-        logger.info(f"First notification for {chat_id} scheduled in 1 h.")
+        logger.info(
+            f"First notification for {chat_id} in 1h → "
+            f"slot cats: {first_cats} (Syria time ~{future_time.strftime('%H:%M')})"
+        )
 
 
 async def _first_notification(context: ContextTypes.DEFAULT_TYPE):
-    """Send the very first notification for a new user using whatever slot_cats are passed."""
+    """Send the very first notification for a new user."""
     chat_id   = context.job.chat_id
     slot_cats = context.job.data
 
@@ -820,7 +892,14 @@ def main():
     app.add_handler(CommandHandler("start", start))
 
     async def post_init(application: Application):
-        # Schedule one run_daily job per exact time in SCHEDULE (UTC converted).
+        now_utc = datetime.datetime.utcnow()
+        now_syria = syria_now()
+        logger.info(
+            f"Bot starting — UTC: {now_utc.strftime('%H:%M')}, "
+            f"Syria: {now_syria.strftime('%H:%M')}"
+        )
+
+        # Schedule one run_daily job per exact time in SCHEDULE (converted to UTC).
         for syria_h, syria_m, cats in SCHEDULE:
             t = utc_time(syria_h, syria_m)
             application.job_queue.run_daily(
