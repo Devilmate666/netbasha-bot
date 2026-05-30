@@ -671,13 +671,16 @@ def register_user(state: dict, chat_id: int):
     users = get_users(state)
     key = str(chat_id)
     if key not in users:
+        now = datetime.datetime.utcnow()
+        first_notify_after = (now + datetime.timedelta(hours=1)).isoformat()
         users[key] = {
-            "joined_at": datetime.datetime.utcnow().isoformat(),
+            "joined_at": now.isoformat(),
+            "first_notify_after": first_notify_after,  # never notify before this UTC time
             "msg_used": {},
             "slot_queues": {},   # per-slot shuffled queues for category rotation
             "slot_last": {},     # last category used per slot
         }
-        logger.info(f"New user registered: {chat_id}")
+        logger.info(f"New user registered: {chat_id} — first notification after {first_notify_after} UTC")
 
 
 def pick_category_for_slot(user_data: dict, slot_cats: list[str]) -> str:
@@ -766,17 +769,33 @@ async def send_notifications(context: ContextTypes.DEFAULT_TYPE):
     now = datetime.datetime.utcnow()
     sent_count = 0
     for chat_id_str, user_data in list(users.items()):
-        # Skip users who joined less than 1 hour ago — they get a dedicated
-        # first_notification job instead.
-        joined_at = user_data.get("joined_at")
-        if joined_at:
+        # ── 1-hour new-user grace period ─────────────────────────────────────
+        # first_notify_after is stored in state so it survives bot restarts.
+        # Fall back to joined_at+1h for older state entries that lack the field.
+        first_notify_after_raw = user_data.get("first_notify_after")
+        if not first_notify_after_raw:
+            joined_at = user_data.get("joined_at")
+            if joined_at:
+                try:
+                    first_notify_after_raw = (
+                        datetime.datetime.fromisoformat(joined_at)
+                        + datetime.timedelta(hours=1)
+                    ).isoformat()
+                    user_data["first_notify_after"] = first_notify_after_raw
+                except Exception:
+                    pass
+
+        if first_notify_after_raw:
             try:
-                age = (now - datetime.datetime.fromisoformat(joined_at)).total_seconds()
-                if age < 3600:
-                    logger.info(f"Skipping {chat_id_str} — joined {int(age)}s ago.")
+                if now < datetime.datetime.fromisoformat(first_notify_after_raw):
+                    logger.info(
+                        f"Skipping {chat_id_str} — grace period until "
+                        f"{first_notify_after_raw} UTC (now {now.isoformat()})"
+                    )
                     continue
             except Exception:
                 pass
+        # ─────────────────────────────────────────────────────────────────────
 
         chat_id  = int(chat_id_str)
         category = pick_category_for_slot(user_data, slot_cats)
@@ -818,58 +837,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if is_new:
-        # Schedule the first notification 1 hour from now.
-        # Use the categories that match the slot the user will land in
-        # after 1 hour — not hardcoded to 6 AM health/food.
-        future_time = syria_now() + datetime.timedelta(hours=1)
-        future_minutes = future_time.hour * 60 + future_time.minute
-
-        # Find the slot whose time is <= future_minutes (most recent before then)
-        first_cats = SCHEDULE[-1][2]  # default: last slot wraps around
-        best_minutes = -1
-        for h, m, cats in SCHEDULE:
-            sm = slot_to_minutes(h, m)
-            if sm <= future_minutes and sm > best_minutes:
-                first_cats = cats
-                best_minutes = sm
-
-        context.job_queue.run_once(
-            _first_notification,
-            when=3600,
-            chat_id=chat_id,
-            data=first_cats,
-            name=f"first_{chat_id}",
-        )
+        # The user's first_notify_after is stored in state (set by register_user).
+        # Regular scheduled slots skip this user until that timestamp passes,
+        # so no in-memory job is needed — this survives bot restarts automatically.
         logger.info(
-            f"First notification for {chat_id} in 1h → "
-            f"slot cats: {first_cats} (Syria time ~{future_time.strftime('%H:%M')})"
+            f"New user {chat_id} registered — regular notifications start in 1 hour."
         )
 
-
-async def _first_notification(context: ContextTypes.DEFAULT_TYPE):
-    """Send the very first notification for a new user."""
-    chat_id   = context.job.chat_id
-    slot_cats = context.job.data
-
-    state     = load_state()
-    users     = get_users(state)
-    user_data = users.get(str(chat_id))
-    if not user_data:
-        return
-
-    category = pick_category_for_slot(user_data, slot_cats)
-    msg      = build_message(category, user_data)
-    save_state(state)
-    try:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=msg,
-            parse_mode="Markdown",
-            disable_web_page_preview=True,
-        )
-        logger.info(f"First notification sent to {chat_id} → [{category}]")
-    except Exception as e:
-        logger.warning(f"Failed first notification for {chat_id}: {e}")
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
