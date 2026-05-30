@@ -36,28 +36,23 @@ CATEGORIES = {
 }
 
 # ─── Exact send schedule (Syrian time UTC+3) ─────────────────────────────────
-# Each entry: (hour, minute, [categories])  — all times in Syria local time.
+# Each entry: (hour, minute, category)  — one category per slot.
 SCHEDULE = [
-    # Morning  06:00 – 10:00  →  Health & Food
-    ( 6,  0, ["health", "food"]),
-    ( 7, 30, ["health", "food"]),
-    ( 9,  0, ["health", "food"]),
-    # Afternoon 12:30 – 15:30  →  Music & Social
-    (12, 30, ["music",  "social"]),
-    (14,  0, ["music",  "social"]),
-    (15, 30, ["music",  "social"]),
-    # Evening  17:30 – 19:00  →  Movies & Anime
-    (17, 30, ["movies", "anime"]),
-    (18, 15, ["movies", "anime"]),
-    (19,  0, ["movies", "anime"]),
-    # Night    21:00 – 23:00  →  Channels & Sports
-    (21,  0, ["tv",     "sports"]),
-    (22,  0, ["tv",     "sports"]),
-    (23,  0, ["tv",     "sports"]),
-    # Late     00:00 – 02:00  →  Tech & Books
-    ( 0,  0, ["tech",   "books"]),
-    ( 1,  0, ["tech",   "books"]),
-    ( 2,  0, ["tech",   "books"]),
+    # Morning
+    ( 6,  0, ["health"]),
+    ( 9,  0, ["food"]),
+    # Afternoon
+    (12, 30, ["music"]),
+    (14,  0, ["social"]),
+    # Evening
+    (17, 30, ["movies"]),
+    (19,  0, ["anime"]),
+    # Night
+    (21,  0, ["tv"]),
+    (23,  0, ["sports"]),
+    # Late
+    ( 0,  0, ["tech"]),
+    ( 2,  0, ["books"]),
 ]
 
 SYRIA_UTC_OFFSET = 3  # UTC+3
@@ -683,36 +678,6 @@ def register_user(state: dict, chat_id: int):
         logger.info(f"New user registered: {chat_id} — first notification after {first_notify_after} UTC")
 
 
-def pick_category_for_slot(user_data: dict, slot_cats: list[str]) -> str:
-    """
-    Round-robin through the allowed categories for the current time slot,
-    shuffled each cycle. Each slot has its own independent queue so rotations
-    don't interfere with each other.
-    """
-    slot_key  = "|".join(sorted(slot_cats))
-    queues    = user_data.setdefault("slot_queues", {})
-    lasts     = user_data.setdefault("slot_last",   {})
-    queue     = queues.get(slot_key, [])
-    last_cat  = lasts.get(slot_key)
-
-    if not queue:
-        new_queue = slot_cats[:]
-        random.shuffle(new_queue)
-        if last_cat and new_queue[0] == last_cat:
-            new_queue.append(new_queue.pop(0))
-        queue = new_queue
-
-    if last_cat and len(queue) > 1 and queue[0] == last_cat:
-        for j in range(1, len(queue)):
-            if queue[j] != last_cat:
-                queue[0], queue[j] = queue[j], queue[0]
-                break
-
-    picked = queue.pop(0)
-    queues[slot_key]   = queue
-    lasts[slot_key]    = picked
-    return picked
-
 
 def build_message(category: str, user_data: dict) -> str:
     """Pick a message variant for the category (no repeats until all used)."""
@@ -797,9 +762,9 @@ async def send_notifications(context: ContextTypes.DEFAULT_TYPE):
                 pass
         # ─────────────────────────────────────────────────────────────────────
 
-        chat_id  = int(chat_id_str)
-        category = pick_category_for_slot(user_data, slot_cats)
-        msg      = build_message(category, user_data)
+        chat_id = int(chat_id_str)
+        category = slot_cats[0]  # one category per slot
+        msg = build_message(category, user_data)
         try:
             await context.bot.send_message(
                 chat_id=chat_id,
@@ -810,7 +775,7 @@ async def send_notifications(context: ContextTypes.DEFAULT_TYPE):
             sent_count += 1
             logger.info(f"Notified user {chat_id} → [{category}]")
         except Exception as e:
-            logger.warning(f"Failed to notify {chat_id}: {e}")
+            logger.warning(f"Failed to notify {chat_id} [{category}]: {e}")
 
     logger.info(f"Slot {context.job.name} done — notified {sent_count}/{len(users)} users.")
     save_state(state)
