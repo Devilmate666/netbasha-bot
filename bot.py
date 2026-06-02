@@ -10,7 +10,11 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TOKEN   = "8782083692:AAF6RRfvHYTZd0kPZUDL1ttGeAtVt-JWG5E"
+# ─── Get token from environment variable ─────────────────────────────────────
+TOKEN = os.environ.get("BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("BOT_TOKEN environment variable not set!")
+
 APP_URL = "https://t.me/NetbashaBot/netbasha"
 
 # ─── State file — persists registered users across GitHub Action runs ─────────
