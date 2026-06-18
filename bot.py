@@ -932,10 +932,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("🚀 افتح نت باشا", url=APP_URL)
     ]])
-    await context.bot.send_video(
-        chat_id=chat_id,
-        video="https://dl.dropboxusercontent.com/scl/fi/4d5aqjxocom66xs59aahh/promo-video.mp4?rlkey=0l67qay7iob4d5uih5thd83j3&st=xmhwp76z&dl=0",
-    )
+    try:
+        import urllib.request
+        PROMO_VIDEO_URL = "https://dl.dropboxusercontent.com/scl/fi/4d5aqjxocom66xs59aahh/promo-video.mp4?rlkey=0l67qay7iob4d5uih5thd83j3&st=xmhwp76z&dl=0"
+        with urllib.request.urlopen(PROMO_VIDEO_URL, timeout=30) as resp:
+            video_bytes = resp.read()
+        await context.bot.send_video(chat_id=chat_id, video=video_bytes)
+    except Exception as e:
+        logger.warning(f"Failed to send promo video: {e}")
     await update.message.reply_text(
         WELCOME_MSG,
         parse_mode="Markdown",
