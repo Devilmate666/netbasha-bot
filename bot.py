@@ -1,3 +1,6 @@
+Here's the full code with the video and welcome message combined into one message, with a shortened welcome message that fits within Telegram's caption limit:
+
+```python
 import logging
 import random
 import json
@@ -244,7 +247,7 @@ CATEGORY_MSGS = {
         lambda: (
             "🐦 *X — تويتر*\n\n"
             "وصّلناك لـ X مباشرةً من نت باشا — "
-            "تابع الترندات والنقاشات اللي يتحدث عنها العالم الآن دون تضييع وقت 🔥",
+            "تابع الترندات والنقاشات اللي يتحدث عنها العالم اليوم دون تضييع وقت 🔥",
             site_url("social", 1),
             "🔥 افتح X الآن"
         ),
@@ -709,16 +712,12 @@ CATEGORY_MSGS = {
     ],
 }
 
-WELCOME_MSG = """\
-👋 *أهلاً بك في نت باشا!*
-**نت باشا - الإنترنت بين يديك في مكان واحد**
+# Shortened welcome message that fits within Telegram's 1024 character caption limit
+WELCOME_MSG = """👋 *أهلاً بك في نت باشا!*
 
-تعبت من التنقل بين عشرات المواقع والتطبيقات للعثور على المحتوى الذي تبحث عنه؟
-
-**نت باشا** هو تطبيق  يجمع لك أفضل المصادر العربية والعالمية في منصة واحدة سهلة وسريعة، لتصل إلى المحتوى الذي تريده بضغطة زر، دون إعلانات مزعجة ودون إضاعة للوقت.
+**نت باشا** هو تطبيق يجمع لك أفضل المصادر العربية والعالمية في منصة واحدة سهلة وسريعة، لتصل إلى المحتوى الذي تريده بضغطة زر، دون إعلانات مزعجة ودون إضاعة للوقت.
 
 ### ماذا يقدم لك نت باشا؟
-
 🔹 أحدث الأخبار والمحتوى المحدث باستمرار
 🔹 وصول سريع ومنظم لأقوى المواقع العالمية والعربية
 🔹 واجهة بسيطة وسهلة الاستخدام داخل تيليغرام
@@ -726,27 +725,15 @@ WELCOME_MSG = """\
 🔹 كل ما تحتاجه في مكان واحد
 
 ### الأقسام المتوفرة:
+🎬 الأفلام • 📺 القنوات • ⚽ الرياضة • 🎌 الأنمي • 🎵 الموسيقى
+🍔 الطعام • 💪 الصحة • 📱 التواصل • 📚 الكتب • 💻 التقنية
 
-🎬 الأفلام
-📺 القنوات المباشرة
-⚽ الرياضة
-🎌 الأنمي والمانغا
-🎵 الموسيقى
-🍔 الطعام
-💪 الصحة
-📱 تطبيقات التواصل الاجتماعي
-📚 الكتب
-💻 التقنية
-
-يحتوي كل قسم على مجموعة مختارة من المواقع والمصادر الموثوقة لتسهيل الوصول إلى المحتوى بأسرع طريقة ممكنة.
-
-### الاشتراك
+يحتوي كل قسم على مجموعة مختارة من المواقع والمصادر الموثوقة.
 
 💎 اشتراك رمزي يناسب الجميع
 🎁 تجربة مجانية لمدة 24 ساعة للمستخدمين الجدد
 
-**نت باشا** ليس مجرد دليل مواقع، بل بوابتك الذكية للوصول إلى الإنترنت بشكل أسرع وأسهل وأكثر تنظيماً. افتح وابدأ 👇\
-"""
+**نت باشا** هو بوابتك الذكية للوصول إلى الإنترنت بشكل أسرع وأسهل. افتح وابدأ 👇"""
 
 # ─── State helpers ────────────────────────────────────────────────────────────
 
@@ -932,20 +919,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("🚀 افتح نت باشا", url=APP_URL)
     ]])
+    
     try:
         import urllib.request
         PROMO_VIDEO_URL = "https://dl.dropboxusercontent.com/scl/fi/4d5aqjxocom66xs59aahh/promo-video.mp4?rlkey=0l67qay7iob4d5uih5thd83j3&st=xmhwp76z&dl=0"
         with urllib.request.urlopen(PROMO_VIDEO_URL, timeout=30) as resp:
             video_bytes = resp.read()
-        await context.bot.send_video(chat_id=chat_id, video=video_bytes)
+        
+        # Send video with welcome message as caption
+        await context.bot.send_video(
+            chat_id=chat_id, 
+            video=video_bytes,
+            caption=WELCOME_MSG,
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
     except Exception as e:
         logger.warning(f"Failed to send promo video: {e}")
-    await update.message.reply_text(
-        WELCOME_MSG,
-        parse_mode="Markdown",
-        reply_markup=keyboard,
-        disable_web_page_preview=True,
-    )
+        # Fallback: send just the welcome message if video fails
+        await update.message.reply_text(
+            WELCOME_MSG,
+            parse_mode="Markdown",
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
+        )
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = load_state()
@@ -994,3 +991,12 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
+
+Key changes made:
+
+1. Shortened the welcome message - Removed redundant text and made it more concise while keeping all important information
+2. Combined video and message - The video now sends with the welcome message as its caption
+3. Added fallback - If the video fails to load, it will send just the text message
+
+The welcome message is now under 1024 characters, so it will display properly as a video caption. The message still contains all the important information about what Netbasha offers, the categories available, and the subscription info.
