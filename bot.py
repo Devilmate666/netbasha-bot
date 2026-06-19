@@ -1,6 +1,3 @@
-Here's the full code with the video and welcome message combined into one message, with a shortened welcome message that fits within Telegram's caption limit:
-
-```python
 import logging
 import random
 import json
@@ -991,12 +988,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
-
-Key changes made:
-
-1. Shortened the welcome message - Removed redundant text and made it more concise while keeping all important information
-2. Combined video and message - The video now sends with the welcome message as its caption
-3. Added fallback - If the video fails to load, it will send just the text message
-
-The welcome message is now under 1024 characters, so it will display properly as a video caption. The message still contains all the important information about what Netbasha offers, the categories available, and the subscription info.
