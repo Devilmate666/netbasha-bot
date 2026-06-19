@@ -923,13 +923,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with urllib.request.urlopen(PROMO_VIDEO_URL, timeout=30) as resp:
             video_bytes = resp.read()
         
-        # Send video with welcome message as caption
+        # Send video with welcome message as caption and auto-play support
         await context.bot.send_video(
             chat_id=chat_id, 
             video=video_bytes,
             caption=WELCOME_MSG,
             parse_mode="Markdown",
-            reply_markup=keyboard
+            reply_markup=keyboard,
+            supports_streaming=True  # This enables auto-play/streaming
         )
     except Exception as e:
         logger.warning(f"Failed to send promo video: {e}")
