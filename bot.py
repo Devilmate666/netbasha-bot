@@ -967,6 +967,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             disable_web_page_preview=True,
         )
 
+async def users_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ADMIN_ID:
+        return
+    state = load_state()
+    users = get_users(state)
+    await update.message.reply_text(f"👥 *عدد المشتركين:* {len(users)}", parse_mode="Markdown")
+
+
 async def notify_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a custom broadcast notification to all users.
 
@@ -1083,6 +1091,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("notify", notify_custom))
+    app.add_handler(CommandHandler("users", users_count))
 
     async def post_init(application):
         await catch_up_missed_slots(application)
