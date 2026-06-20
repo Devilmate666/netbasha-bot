@@ -1013,22 +1013,45 @@ async def notify_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ قسم غير معروف.\n\nالأقسام المتاحة:\n{cats}")
         return
 
-    site_name = args[1]
+    # Support multi-word site names by trying progressively longer combinations
+    # e.g. /notify sports كأس العالم <message>  →  site_name="كأس العالم", text=<message>
+    site_index = -1
+    site_name = None
+    text = None
 
-    if site_name.lower() == "home":
+    if args[1].lower() == "home":
         site_index = -1
+        site_name = "home"
         text = " ".join(args[2:])
     else:
-        site_index = find_site_index(category, site_name)
-        if site_index is None:
-            available = ", ".join(SITE_NAMES.get(category, []))
-            await update.message.reply_text(
-                f"❌ لم أجد موقعاً باسم *{site_name}* في قسم {category}.\n\n"
-                f"*المواقع المتاحة:*\n{available}",
-                parse_mode="Markdown"
-            )
+        # Try matching 1, 2, 3... words as the site name; use the longest match
+        sites = SITE_NAMES.get(category, [])
+        best_match_words = 0
+        for num_words in range(1, len(args)):
+            candidate = " ".join(args[1:1 + num_words])
+            candidate_stripped = candidate.strip()
+            for i, site in enumerate(sites):
+                if candidate_stripped in site or site in candidate_stripped:
+                    if num_words > best_match_words:
+                        best_match_words = num_words
+                        site_index = i
+                        site_name = candidate_stripped
+                        text = " ".join(args[1 + num_words:])
+
+        if site_name is None or text is None or not text.strip():
+            if site_name is None:
+                available = ", ".join(sites)
+                await update.message.reply_text(
+                    f"❌ لم أجد موقعاً في قسم {category} يطابق ما كتبته.\n\n"
+                    f"*المواقع المتاحة:*\n{available}",
+                    parse_mode="Markdown"
+                )
+            else:
+                await update.message.reply_text(
+                    f"❌ يرجى إضافة نص الرسالة بعد اسم الموقع.",
+                    parse_mode="Markdown"
+                )
             return
-        text = " ".join(args[2:])
 
     url = site_url(category, site_index) if site_index >= 0 else APP_URL
 
