@@ -1025,8 +1025,8 @@ async def notify_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = site_url(category, site_index) if site_index >= 0 else APP_URL
 
     emoji = CATEGORIES[category]["emoji"]
-    label = CATEGORIES[category]["label"]
-    btn_label = f"{emoji} {label}"
+    display_name = SITE_NAMES.get(category, [])[site_index] if site_index >= 0 else "نت باشا"
+    btn_label = f"افتح {display_name}"
 
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(btn_label, url=url)]])
 
