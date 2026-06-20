@@ -39,6 +39,28 @@ CATEGORIES = {
     "tech":   {"emoji": "💻", "label": "تقنية وذكاء اصطناعي"},
 }
 
+# Site name → index map (matches categorySites order in index.html exactly)
+SITE_NAMES = {
+    "movies": ["دليل الأفلام", "كيو فيلم", "المصطبة", "مدينة الأفلام", "مسلسلات تايم", "كيبوراما", "قصة عشق", "لاروزا", "فشار", "أهواك"],
+    "tv":     ["دليل البرامج", "قنوات عربية 1", "قنوات عربية 2", "قنوات عالمية", "قنوات الدول", "اذاعات راديو"],
+    "sports": ["كووورة", "365 سكور", "كأس العالم", "مباريات لايف 1", "مباريات لايف 2"],
+    "anime":  ["أخبار الأنمي", "دليل المانغا", "قراءة المانغا", "انمي فور اب", "انمي بيك", "اوك أنمي", "ريستو", "ويت أنمي", "أنمي سيلفر"],
+    "music":  ["أنغامي", "راديو نت باشا", "بيلبورد عربية", "تحميل mp3", "تحميل ألبومات كاملة", "أحدث الألبومات", "أغاني أجنبي"],
+    "food":   ["وصفات شامية", "وصفات عربية", "فن الطهي", "أكل وبس", "غوودي", "طبخات", "أكل صحي", "يمي", "أطيب أكلة"],
+    "health": ["مقالات طبية", "منظمة الصحة العالمية", "دايلي ميديكال", "دليل الصحة", "الصحة النفسية", "الصحة و الجمال"],
+    "social": ["فيسبوك", "تويتر", "انستغرام", "يوتيوب", "تيك توك", "سناب شات", "ديسكورد", "تويتش", "لينكد إن", "واتساب", "ثريدز", "بينترست", "ريديت", "كورا", "في كي"],
+    "books":  ["نور كتب", "مكتبة سهم", "كتباتي", "المكتبة العربية", "كتابك عندنا", "مجلة الكتب العربية", "قهوة غرب"],
+    "tech":   ["التقنية السورية", "AI بدون حساب", "أدوات AI", "مقارنات أجهزة", "شروحات ومراجعات", "تطبيقات أندرويد", "تطبيقات كومبيوتر", "تطبيقات عامة", "تطبيقات أبل"],
+}
+
+def find_site_index(category: str, name: str):
+    sites = SITE_NAMES.get(category, [])
+    name_stripped = name.strip()
+    for i, site in enumerate(sites):
+        if name_stripped in site or site in name_stripped:
+            return i
+    return None
+
 SCHEDULE = [
     ( 8,  0, "health"),
     (10,  0, "books"),
@@ -963,32 +985,43 @@ async def notify_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args
     if not args or len(args) < 3:
+        sites_list = "\n".join([f"  *{cat}:* {', '.join(names)}" for cat, names in SITE_NAMES.items()])
         await update.message.reply_text(
             "📋 *طريقة الاستخدام:*\n\n"
-            "`/notify <category> <site_index> <message>`\n\n"
-            "*مثال:*\n"
-            "`/notify movies 2 🎬 فيلم جديد رائع!`\n"
-            "`/notify sports -1 ⚽ مباراة الليلة!`\n\n"
-            "*الأقسام المتاحة:*\n"
-            "movies, tv, sports, anime, music, food, health, social, books, tech\n\n"
-            "*site\\_index:* رقم الموقع داخل القسم (من 0) أو \\-1 للرابط الرئيسي",
+            "`/notify <قسم> <اسم الموقع> <الرسالة>`\n\n"
+            "*أمثلة:*\n"
+            "`/notify sports كأس العالم ⚽ شاهد المباريات الآن!`\n"
+            "`/notify movies المصطبة 🎬 أفلام جديدة!`\n"
+            "`/notify tech home 📢 إعلان مهم!`\n\n"
+            f"*المواقع المتاحة:*\n{sites_list}",
             parse_mode="Markdown"
         )
         return
 
     category = args[0]
-    try:
-        site_index = int(args[1])
-    except ValueError:
-        await update.message.reply_text("❌ site_index يجب أن يكون رقماً. استخدم -1 للرابط الرئيسي.")
-        return
 
     if category not in CATEGORIES:
         cats = ", ".join(CATEGORIES.keys())
         await update.message.reply_text(f"❌ قسم غير معروف.\n\nالأقسام المتاحة:\n{cats}")
         return
 
-    text = " ".join(args[2:])
+    site_name = args[1]
+
+    if site_name.lower() == "home":
+        site_index = -1
+        text = " ".join(args[2:])
+    else:
+        site_index = find_site_index(category, site_name)
+        if site_index is None:
+            available = ", ".join(SITE_NAMES.get(category, []))
+            await update.message.reply_text(
+                f"❌ لم أجد موقعاً باسم *{site_name}* في قسم {category}.\n\n"
+                f"*المواقع المتاحة:*\n{available}",
+                parse_mode="Markdown"
+            )
+            return
+        text = " ".join(args[2:])
+
     url = site_url(category, site_index) if site_index >= 0 else APP_URL
 
     emoji = CATEGORIES[category]["emoji"]
