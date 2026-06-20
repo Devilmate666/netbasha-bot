@@ -31,8 +31,6 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # Cache is more reliable than artifacts for state persistence.
-      # The key uses a fixed name so it is always restored and overwritten.
       - name: Restore bot state
         uses: actions/cache/restore@v4
         with:
@@ -44,9 +42,9 @@ jobs:
       - name: Run bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
         run: timeout 17000 python bot.py || true
 
-      # Always save state, even if the bot crashed
       - name: Save bot state
         if: always()
         uses: actions/cache/save@v4
