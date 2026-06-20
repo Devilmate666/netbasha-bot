@@ -14,6 +14,9 @@ TOKEN = os.environ.get("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("BOT_TOKEN environment variable not set!")
 
+# ← Replace with your Telegram numeric chat ID (message @userinfobot to find it)
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
+
 APP_URL = "https://t.me/NetbashaBot/netbasha"
 
 STATE_FILE = "/tmp/bot_state.json"
@@ -942,6 +945,90 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             disable_web_page_preview=True,
         )
 
+async def notify_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send a custom broadcast notification to all users.
+
+    Usage (send this message to the bot):
+        /notify <category> <site_index> <message text>
+
+    Examples:
+        /notify movies 2 🎬 فيلم جديد رائع — شاهده الآن!
+        /notify sports 0 ⚽ مباراة الليلة — لا تفوّتها!
+        /notify tech -1 📢 إعلان مهم — افتح التطبيق الآن
+
+    Use site_index = -1 to link directly to the app home without a deeplink.
+    """
+    if update.effective_chat.id != ADMIN_ID:
+        return  # Silently ignore non-admins
+
+    args = context.args
+    if not args or len(args) < 3:
+        await update.message.reply_text(
+            "📋 *طريقة الاستخدام:*\n\n"
+            "`/notify <category> <site_index> <message>`\n\n"
+            "*مثال:*\n"
+            "`/notify movies 2 🎬 فيلم جديد رائع!`\n"
+            "`/notify sports -1 ⚽ مباراة الليلة!`\n\n"
+            "*الأقسام المتاحة:*\n"
+            "movies, tv, sports, anime, music, food, health, social, books, tech\n\n"
+            "*site\\_index:* رقم الموقع داخل القسم (من 0) أو \\-1 للرابط الرئيسي",
+            parse_mode="Markdown"
+        )
+        return
+
+    category = args[0]
+    try:
+        site_index = int(args[1])
+    except ValueError:
+        await update.message.reply_text("❌ site_index يجب أن يكون رقماً. استخدم -1 للرابط الرئيسي.")
+        return
+
+    if category not in CATEGORIES:
+        cats = ", ".join(CATEGORIES.keys())
+        await update.message.reply_text(f"❌ قسم غير معروف.\n\nالأقسام المتاحة:\n{cats}")
+        return
+
+    text = " ".join(args[2:])
+    url = site_url(category, site_index) if site_index >= 0 else APP_URL
+
+    emoji = CATEGORIES[category]["emoji"]
+    label = CATEGORIES[category]["label"]
+    btn_label = f"{emoji} {label}"
+
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(btn_label, url=url)]])
+
+    state = load_state()
+    users = get_users(state)
+
+    if not users:
+        await update.message.reply_text("⚠️ لا يوجد مستخدمون مسجلون حتى الآن.")
+        return
+
+    await update.message.reply_text(f"📤 جاري الإرسال إلى {len(users)} مستخدم...")
+
+    sent, failed = 0, 0
+    for chat_id_str in list(users.keys()):
+        try:
+            await context.bot.send_message(
+                chat_id=int(chat_id_str),
+                text=text,
+                parse_mode="Markdown",
+                reply_markup=keyboard,
+                disable_web_page_preview=True,
+            )
+            sent += 1
+        except Exception as e:
+            logger.warning(f"Custom notify failed {chat_id_str}: {e}")
+            failed += 1
+
+    await update.message.reply_text(
+        f"✅ *تم الإرسال*\n\n"
+        f"📨 وصل إلى: {sent} مستخدم\n"
+        f"❌ فشل: {failed}",
+        parse_mode="Markdown"
+    )
+
+
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = load_state()
     now_syria = syria_now()
@@ -962,6 +1049,7 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("notify", notify_custom))
 
     async def post_init(application):
         await catch_up_missed_slots(application)
