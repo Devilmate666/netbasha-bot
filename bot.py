@@ -4,9 +4,8 @@ import json
 import os
 import datetime
 import asyncio
-import urllib.request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,12 +14,15 @@ TOKEN = os.environ.get("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("BOT_TOKEN environment variable not set!")
 
+# ← Replace with your Telegram numeric chat ID (message @userinfobot to find it)
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 
 APP_URL = "https://t.me/NetbashaBot/netbasha"
 
-STATE_FILE = os.environ.get("STATE_FILE", "/tmp/bot_state.json")
+STATE_FILE = "/tmp/bot_state.json"
 
+# Deeplink opens app → category → specific site (by index in categorySites array)
+# Format: category__index  e.g. "movies__0"  "anime__2"
 def site_url(category: str, site_index: int) -> str:
     return f"{APP_URL}?startapp={category}__{site_index}"
 
@@ -37,10 +39,11 @@ CATEGORIES = {
     "tech":   {"emoji": "💻", "label": "تقنية وذكاء اصطناعي"},
 }
 
+# Site name → index map (matches categorySites order in index.html exactly)
 SITE_NAMES = {
     "movies": ["دليل الأفلام", "كيو فيلم", "المصطبة", "مدينة الأفلام", "مسلسلات تايم", "كيبوراما", "قصة عشق", "لاروزا", "فشار", "أهواك"],
     "tv":     ["دليل البرامج", "قنوات عربية 1", "قنوات عربية 2", "قنوات عالمية", "قنوات الدول", "اذاعات راديو"],
-    "sports": ["كووورة", "365 سكور", "كأس العالم", "مباريات لايف 1", "مباريات لايف 2", "قنوات رياضة", "رياضة عالمية"],
+    "sports": ["كووورة", "365 سكور", "كأس العالم", "مباريات لايف 1", "مباريات لايف 2"],
     "anime":  ["أخبار الأنمي", "دليل المانغا", "قراءة المانغا", "انمي فور اب", "انمي بيك", "اوك أنمي", "ريستو", "ويت أنمي", "أنمي سيلفر"],
     "music":  ["أنغامي", "راديو نت باشا", "بيلبورد عربية", "تحميل mp3", "تحميل ألبومات كاملة", "أحدث الألبومات", "أغاني أجنبي"],
     "food":   ["وصفات شامية", "وصفات عربية", "فن الطهي", "أكل وبس", "غوودي", "طبخات", "أكل صحي", "يمي", "أطيب أكلة"],
@@ -49,6 +52,14 @@ SITE_NAMES = {
     "books":  ["نور كتب", "مكتبة سهم", "كتباتي", "المكتبة العربية", "كتابك عندنا", "مجلة الكتب العربية", "قهوة غرب"],
     "tech":   ["التقنية السورية", "AI بدون حساب", "أدوات AI", "مقارنات أجهزة", "شروحات ومراجعات", "تطبيقات أندرويد", "تطبيقات كومبيوتر", "تطبيقات عامة", "تطبيقات أبل"],
 }
+
+def find_site_index(category: str, name: str):
+    sites = SITE_NAMES.get(category, [])
+    name_stripped = name.strip()
+    for i, site in enumerate(sites):
+        if name_stripped in site or site in name_stripped:
+            return i
+    return None
 
 SCHEDULE = [
     ( 8,  0, "health"),
@@ -73,7 +84,35 @@ def utc_time(syria_hour, syria_minute):
     total %= 1440
     return datetime.time(total // 60, total % 60)
 
+# ══════════════════════════════════════════════════════════════════════════════
+# SITE INDEX MAP — matches categorySites order in index.html exactly
+# movies:  0=دليل الأفلام  1=كيو فيلم  2=المصطبة  3=مدينة الأفلام  4=مسلسلات تايم
+#          5=كيبوراما      6=قصة عشق   7=لاروزا   8=فشار           9=أهواك
+# tv:      0=دليل البرامج  1=قنوات عربية1  2=قنوات عربية2  3=قنوات عالمية
+#          4=قنوات الدول   5=اذاعات راديو
+# sports:  0=كووورة  1=365سكور  2=مباريات لايف1  3=مباريات لايف2
+#          4=قنوات رياضة  5=رياضة عالمية
+# anime:   0=أخبار الأنمي  1=دليل المانغا  2=قراءة المانغا
+#          3=انمي فور اب  4=انمي بيك  5=اوك أنمي  6=ريستو  7=ويت أنمي  8=أنمي سيلفر
+# music:   0=أنغامي  1=راديو نت باشا  2=بيلبورد عربية  3=تحميل mp3
+#          4=تحميل ألبومات كاملة  5=أحدث الألبومات  6=أغاني أجنبي
+# food:    0=وصفات شامية  1=وصفات عربية  2=فن الطهي  3=أكل وبس
+#          4=غوودي  5=طبخات  6=أكل صحي  7=يمي  8=أطيب أكلة
+# health:  0=مقالات طبية  1=منظمة الصحة العالمية  2=دايلي ميديكال
+#          3=دليل الصحة  4=الصحة النفسية  5=الصحة و الجمال
+# social:  0=فيسبوك  1=تويتر  2=انستغرام  3=يوتيوب  4=تيك توك
+#          5=سناب شات  6=ديسكورد  7=تويتش  8=لينكد إن  9=واتساب
+#          10=ثريدز  11=بينترست  12=ريديت  13=كورا  14=في كي
+# books:   0=نور كتب  1=مكتبة سهم  2=كتباتي  3=المكتبة العربية
+#          4=كتابك عندنا  5=مجلة الكتب العربية  6=قهوة غرب
+# tech:    0=التقنية السورية  1=AI بدون حساب  2=أدوات AI  3=مقارنات أجهزة
+#          4=شروحات ومراجعات  5=تطبيقات أندرويد  6=تطبيقات كومبيوتر
+#          7=تطبيقات عامة  8=تطبيقات أبل
+# ══════════════════════════════════════════════════════════════════════════════
+
 CATEGORY_MSGS = {
+
+    # ── HEALTH ────────────────────────────────────────────────────────────────
     "health": [
         lambda: (
             "💊 *مقالات طبية موثوقة*\n\n"
@@ -118,6 +157,8 @@ CATEGORY_MSGS = {
             "💅 اكتشف نصائح الصحة والجمال"
         ),
     ],
+
+    # ── BOOKS ─────────────────────────────────────────────────────────────────
     "books": [
         lambda: (
             "📗 *مكتبة نور*\n\n"
@@ -169,6 +210,8 @@ CATEGORY_MSGS = {
             "🌙 استكشف قهوة غرب"
         ),
     ],
+
+    # ── SPORTS ────────────────────────────────────────────────────────────────
     "sports": [
         lambda: (
             "⚽ *كووورة — أخبار الرياضة*\n\n"
@@ -213,6 +256,8 @@ CATEGORY_MSGS = {
             "🏅 اكتشف الرياضة العالمية"
         ),
     ],
+
+    # ── SOCIAL ────────────────────────────────────────────────────────────────
     "social": [
         lambda: (
             "📱 *كل منصاتك في نقرة واحدة*\n\n"
@@ -320,6 +365,8 @@ CATEGORY_MSGS = {
             "🌐 افتح في كي"
         ),
     ],
+
+    # ── FOOD ──────────────────────────────────────────────────────────────────
     "food": [
         lambda: (
             "🌶️ *المطبخ الشامي الأصيل*\n\n"
@@ -385,6 +432,8 @@ CATEGORY_MSGS = {
             "🌶️ تصفّح أطيب أكلة"
         ),
     ],
+
+    # ── TECH ──────────────────────────────────────────────────────────────────
     "tech": [
         lambda: (
             "🛠️ *التقنية السورية*\n\n"
@@ -450,6 +499,8 @@ CATEGORY_MSGS = {
             "📱 استكشف App Store"
         ),
     ],
+
+    # ── MOVIES ────────────────────────────────────────────────────────────────
     "movies": [
         lambda: (
             "🎬 *دليل الأفلام — أخبار السينما*\n\n"
@@ -515,6 +566,8 @@ CATEGORY_MSGS = {
             "📺 اكتشف منصة أهواك"
         ),
     ],
+
+    # ── ANIME ─────────────────────────────────────────────────────────────────
     "anime": [
         lambda: (
             "🎌 *أخبار الأنمي*\n\n"
@@ -580,6 +633,8 @@ CATEGORY_MSGS = {
             "✨ شاهد في أنمي سيلفر"
         ),
     ],
+
+    # ── MUSIC ─────────────────────────────────────────────────────────────────
     "music": [
         lambda: (
             "🎵 *أنغامي — الموسيقى العربية*\n\n"
@@ -631,6 +686,8 @@ CATEGORY_MSGS = {
             "🎸 استكشف موسيقى جامندو"
         ),
     ],
+
+    # ── TV / CHANNELS ─────────────────────────────────────────────────────────
     "tv": [
         lambda: (
             "📺 *دليل البرامج — ماذا يُبث الآن؟*\n\n"
@@ -677,6 +734,7 @@ CATEGORY_MSGS = {
     ],
 }
 
+# Shortened welcome message that fits within Telegram's 1024 character caption limit
 WELCOME_MSG = """👋 *أهلاً بك في نت باشا!*
 
 **نت باشا** هو تطبيق يجمع لك أفضل المصادر العربية والعالمية في منصة واحدة سهلة وسريعة، لتصل إلى المحتوى الذي تريده بضغطة زر، دون إعلانات مزعجة ودون إضاعة للوقت.
@@ -704,19 +762,15 @@ WELCOME_MSG = """👋 *أهلاً بك في نت باشا!*
 def load_state():
     if os.path.exists(STATE_FILE):
         try:
-            with open(STATE_FILE, 'r', encoding='utf-8') as f:
+            with open(STATE_FILE) as f:
                 return json.load(f)
-        except Exception as e:
-            logger.warning(f"Failed to load state: {e}")
+        except Exception:
+            pass
     return {}
 
 def save_state(state):
-    try:
-        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-        with open(STATE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(state, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.warning(f"Failed to save state: {e}")
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f)
 
 def get_users(state):
     return state.setdefault("users", {})
@@ -750,6 +804,7 @@ def register_user(state, chat_id):
         logger.info(f"New user registered: {chat_id}")
 
 def build_message(category, user_data):
+    """Pick a variant, return (text, url, btn_label). No repeats until all used."""
     msg_list = CATEGORY_MSGS[category]
     msg_used = user_data.setdefault("msg_used", {})
     used = msg_used.get(category, [])
@@ -761,6 +816,7 @@ def build_message(category, user_data):
     used.append(idx)
     msg_used[category] = used
     result = msg_list[idx]()
+    # Support both (text, url) and (text, url, btn_label)
     if len(result) == 3:
         text, url, btn_label = result
     else:
@@ -887,50 +943,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]])
     
     try:
+        import urllib.request
         PROMO_VIDEO_URL = "https://dl.dropboxusercontent.com/scl/fi/4d5aqjxocom66xs59aahh/promo-video.mp4?rlkey=0l67qay7iob4d5uih5thd83j3&st=xmhwp76z&dl=0"
-        with urllib.request.urlopen(PROMO_VIDEO_URL, timeout=10) as resp:
+        with urllib.request.urlopen(PROMO_VIDEO_URL, timeout=30) as resp:
             video_bytes = resp.read()
         
+        # Send video with welcome message as caption and auto-play support
         await context.bot.send_video(
             chat_id=chat_id, 
             video=video_bytes,
             caption=WELCOME_MSG,
             parse_mode="Markdown",
             reply_markup=keyboard,
-            supports_streaming=True
+            supports_streaming=True  # This enables auto-play/streaming
         )
     except Exception as e:
         logger.warning(f"Failed to send promo video: {e}")
+        # Fallback: send just the welcome message if video fails
         await update.message.reply_text(
             WELCOME_MSG,
             parse_mode="Markdown",
             reply_markup=keyboard,
             disable_web_page_preview=True,
         )
-
-# ─── FIXED: Silent Register - Just deletes the trigger message ──────────
-# The Worker now sends the welcome message directly when the user opens the app.
-# This handler is kept only to prevent errors if the Worker still sends the command.
-
-async def silent_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Fallback: If the Worker still sends /nb_silent_register, just delete it.
-    The welcome is now sent directly by the Worker.
-    """
-    message = update.message
-    if not message or not message.text:
-        return
-    if message.text.strip() != "/nb_silent_register":
-        return
-
-    chat_id = update.effective_chat.id
-
-    # Delete the trigger message
-    try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=message.message_id)
-    except Exception:
-        pass
-
 
 async def users_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ADMIN_ID:
@@ -941,8 +976,20 @@ async def users_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def notify_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send a custom broadcast notification to all users.
+
+    Usage (send this message to the bot):
+        /notify <category> <site_index> <message text>
+
+    Examples:
+        /notify movies 2 🎬 فيلم جديد رائع — شاهده الآن!
+        /notify sports 0 ⚽ مباراة الليلة — لا تفوّتها!
+        /notify tech -1 📢 إعلان مهم — افتح التطبيق الآن
+
+    Use site_index = -1 to link directly to the app home without a deeplink.
+    """
     if update.effective_chat.id != ADMIN_ID:
-        return
+        return  # Silently ignore non-admins
 
     args = context.args
     if not args or len(args) < 3:
@@ -966,6 +1013,8 @@ async def notify_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ قسم غير معروف.\n\nالأقسام المتاحة:\n{cats}")
         return
 
+    # Support multi-word site names by trying progressively longer combinations
+    # e.g. /notify sports كأس العالم <message>  →  site_name="كأس العالم", text=<message>
     site_index = -1
     site_name = None
     text = None
@@ -975,6 +1024,7 @@ async def notify_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
         site_name = "home"
         text = " ".join(args[2:])
     else:
+        # Try matching 1, 2, 3... words as the site name; use the longest match
         sites = SITE_NAMES.get(category, [])
         best_match_words = 0
         for num_words in range(1, len(args)):
@@ -1065,10 +1115,6 @@ def main():
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("notify", notify_custom))
     app.add_handler(CommandHandler("users", users_count))
-    app.add_handler(MessageHandler(
-        filters.TEXT & filters.Regex(r"^/nb_silent_register$"),
-        silent_register
-    ))
 
     async def post_init(application):
         await catch_up_missed_slots(application)
@@ -1082,6 +1128,7 @@ def main():
             )
             logger.info(f"Scheduled [{category}] {syria_h:02d}:{syria_m:02d} Syria → {t.hour:02d}:{t.minute:02d} UTC")
 
+        # Clean old slot_fired entries
         state = load_state()
         slots_fired = state.get("slots_fired", {})
         cutoff = (syria_now() - datetime.timedelta(days=7)).strftime("%Y-%m-%d")
