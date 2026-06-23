@@ -5,7 +5,7 @@ import os
 import datetime
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -967,6 +967,65 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             disable_web_page_preview=True,
         )
 
+NB_SILENT_REGISTER = "/nb_silent_register"
+
+async def silent_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Triggered by the Cloudflare Worker when a user opens the Mini App directly.
+    Registers the user (if new) and sends the welcome message — same as /start.
+    The trigger message (/nb_silent_register) was sent silently (no notification).
+    We delete it immediately so the chat stays clean.
+    """
+    message = update.message
+    if not message or not message.text:
+        return
+    if message.text.strip() != NB_SILENT_REGISTER:
+        return
+
+    chat_id = update.effective_chat.id
+
+    # Delete the trigger message so the user never sees it in chat
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message.message_id)
+    except Exception:
+        pass  # Might fail if bot lacks permission — not critical
+
+    state = load_state()
+    is_new = str(chat_id) not in get_users(state)
+    register_user(state, chat_id)
+    save_state(state)
+
+    if not is_new:
+        return  # Already registered — don't send a second welcome
+
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🚀 افتح نت باشا", url=APP_URL)
+    ]])
+
+    try:
+        import urllib.request
+        PROMO_VIDEO_URL = "https://dl.dropboxusercontent.com/scl/fi/4d5aqjxocom66xs59aahh/promo-video.mp4?rlkey=0l67qay7iob4d5uih5thd83j3&st=xmhwp76z&dl=0"
+        with urllib.request.urlopen(PROMO_VIDEO_URL, timeout=30) as resp:
+            video_bytes = resp.read()
+        await context.bot.send_video(
+            chat_id=chat_id,
+            video=video_bytes,
+            caption=WELCOME_MSG,
+            parse_mode="Markdown",
+            reply_markup=keyboard,
+            supports_streaming=True,
+        )
+    except Exception as e:
+        logger.warning(f"silent_register: video failed: {e}")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=WELCOME_MSG,
+            parse_mode="Markdown",
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
+        )
+
+
 async def users_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ADMIN_ID:
         return
@@ -1115,6 +1174,11 @@ def main():
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("notify", notify_custom))
     app.add_handler(CommandHandler("users", users_count))
+    # Triggered by the Cloudflare Worker when user opens the Mini App directly
+    app.add_handler(MessageHandler(
+        filters.TEXT & filters.Regex(r"^/nb_silent_register$"),
+        silent_register
+    ))
 
     async def post_init(application):
         await catch_up_missed_slots(application)
