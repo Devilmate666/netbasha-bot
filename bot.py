@@ -21,7 +21,6 @@ APP_URL = "https://t.me/NetbashaBot/netbasha"
 
 STATE_FILE = os.environ.get("STATE_FILE", "/tmp/bot_state.json")
 
-# Deeplink opens app → category → specific site
 def site_url(category: str, site_index: int) -> str:
     return f"{APP_URL}?startapp={category}__{site_index}"
 
@@ -751,7 +750,6 @@ def register_user(state, chat_id):
         logger.info(f"New user registered: {chat_id}")
 
 def build_message(category, user_data):
-    """Pick a variant, return (text, url, btn_label). No repeats until all used."""
     msg_list = CATEGORY_MSGS[category]
     msg_used = user_data.setdefault("msg_used", {})
     used = msg_used.get(category, [])
@@ -910,19 +908,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             disable_web_page_preview=True,
         )
 
-NB_SILENT_REGISTER = "/nb_silent_register"
-
-# ─── FIXED: Silent Register ──────────────────────────────────────────────────
+# ─── FIXED: Silent Register - Just deletes the trigger message ──────────
+# The Worker now sends the welcome message directly when the user opens the app.
+# This handler is kept only to prevent errors if the Worker still sends the command.
 
 async def silent_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Triggered by the Cloudflare Worker when a user opens the Mini App directly.
-    Registers the user and sends the welcome message.
+    Fallback: If the Worker still sends /nb_silent_register, just delete it.
+    The welcome is now sent directly by the Worker.
     """
     message = update.message
     if not message or not message.text:
         return
-    if message.text.strip() != NB_SILENT_REGISTER:
+    if message.text.strip() != "/nb_silent_register":
         return
 
     chat_id = update.effective_chat.id
@@ -932,41 +930,6 @@ async def silent_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.delete_message(chat_id=chat_id, message_id=message.message_id)
     except Exception:
         pass
-
-    state = load_state()
-    is_new = str(chat_id) not in get_users(state)
-    register_user(state, chat_id)
-    save_state(state)
-
-    if not is_new:
-        return
-
-    # Send welcome message
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("🚀 افتح نت باشا", url=APP_URL)
-    ]])
-
-    try:
-        PROMO_VIDEO_URL = "https://dl.dropboxusercontent.com/scl/fi/4d5aqjxocom66xs59aahh/promo-video.mp4?rlkey=0l67qay7iob4d5uih5thd83j3&st=xmhwp76z&dl=0"
-        with urllib.request.urlopen(PROMO_VIDEO_URL, timeout=10) as resp:
-            video_bytes = resp.read()
-        await context.bot.send_video(
-            chat_id=chat_id,
-            video=video_bytes,
-            caption=WELCOME_MSG,
-            parse_mode="Markdown",
-            reply_markup=keyboard,
-            supports_streaming=True,
-        )
-    except Exception as e:
-        logger.warning(f"silent_register: video failed: {e}")
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=WELCOME_MSG,
-            parse_mode="Markdown",
-            reply_markup=keyboard,
-            disable_web_page_preview=True,
-        )
 
 
 async def users_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
