@@ -938,6 +938,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(state, chat_id)
     save_state(state)
 
+    # Detect if user came from the Mini App subscribe bell
+    came_from_app = bool(context.args and 'from_app' in context.args[0])
+
+    if came_from_app:
+        # Short confirmation — they already know the app, no need for full intro
+        confirm_msg = (
+            "✅ *تم الاشتراك بنجاح!*\n\n"
+            "🔔 ستصلك تنبيهات يومية بأفضل المحتويات مباشرةً هنا\n\n"
+            "ارجع للتطبيق واستمتع 👇"
+        )
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🚀 العودة إلى نت باشا", url=APP_URL)
+        ]])
+        await update.message.reply_text(
+            confirm_msg,
+            parse_mode="Markdown",
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
+        )
+        return
+
+    # Default welcome flow — new user arriving directly at the bot
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("🚀 افتح نت باشا", url=APP_URL)
     ]])
@@ -955,7 +977,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption=WELCOME_MSG,
             parse_mode="Markdown",
             reply_markup=keyboard,
-            supports_streaming=True  # This enables auto-play/streaming
+            supports_streaming=True
         )
     except Exception as e:
         logger.warning(f"Failed to send promo video: {e}")
