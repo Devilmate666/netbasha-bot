@@ -4,6 +4,7 @@ import json
 import os
 import datetime
 import asyncio
+import base64
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -18,6 +19,22 @@ if not TOKEN:
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 
 APP_URL = "https://t.me/NetbashaBot/netbasha"
+
+def make_notif_deeplink(title: str, text: str, url: str, btn_label: str) -> str:
+    """Encode a notification payload as a Telegram Mini App startapp deep link.
+    
+    The app reads ?startapp=notif_<base64json> on launch and stores it in
+    localStorage so the user can view it in the الإشعارات (notifications) panel.
+    """
+    import re
+    payload = json.dumps({"title": title, "text": text, "url": url, "btnLabel": btn_label}, ensure_ascii=False)
+    b64 = base64.urlsafe_b64encode(payload.encode()).decode().rstrip('=')
+    # Telegram startapp param: max 64 chars, only [A-Za-z0-9_-]
+    # Truncate if needed (notification will still be sent via regular message)
+    param = "notif_" + b64
+    if len(param) > 64:
+        param = param[:64]
+    return f"{APP_URL}?startapp={param}"
 
 STATE_FILE = "/tmp/bot_state.json"
 
@@ -854,8 +871,11 @@ async def send_notifications(context: ContextTypes.DEFAULT_TYPE):
         chat_id = int(chat_id_str)
         text, url, btn_label = build_message(category, user_data)
 
+        notif_link = make_notif_deeplink(CATEGORIES[category]['emoji'] + ' ' + CATEGORIES[category]['label'], text, url, btn_label)
+
         keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton(btn_label, url=url)
+            InlineKeyboardButton(btn_label, url=url),
+            InlineKeyboardButton("📥 الإشعارات", url=notif_link),
         ]])
 
         try:
@@ -908,8 +928,10 @@ async def catch_up_missed_slots(application):
 
             chat_id = int(chat_id_str)
             text, url, btn_label = build_message(category, user_data)
+            notif_link = make_notif_deeplink(CATEGORIES[category]['emoji'] + ' ' + CATEGORIES[category]['label'], text, url, btn_label)
             keyboard = InlineKeyboardMarkup([[
-                InlineKeyboardButton(btn_label, url=url)
+                InlineKeyboardButton(btn_label, url=url),
+                InlineKeyboardButton("📥 الإشعارات", url=notif_link),
             ]])
 
             try:
@@ -938,28 +960,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(state, chat_id)
     save_state(state)
 
-    # Detect if user came from the Mini App subscribe bell
-    came_from_app = bool(context.args and 'from_app' in context.args[0])
-
-    if came_from_app:
-        # Short confirmation — they already know the app, no need for full intro
-        confirm_msg = (
-            "✅ *تم الاشتراك بنجاح!*\n\n"
-            "🔔 ستصلك تنبيهات يومية بأفضل المحتويات مباشرةً هنا\n\n"
-            "ارجع للتطبيق واستمتع 👇"
-        )
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("🚀 العودة إلى نت باشا", url=APP_URL)
-        ]])
-        await update.message.reply_text(
-            confirm_msg,
-            parse_mode="Markdown",
-            reply_markup=keyboard,
-            disable_web_page_preview=True,
-        )
-        return
-
-    # Default welcome flow — new user arriving directly at the bot
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("🚀 افتح نت باشا", url=APP_URL)
     ]])
@@ -977,7 +977,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption=WELCOME_MSG,
             parse_mode="Markdown",
             reply_markup=keyboard,
-            supports_streaming=True
+            supports_streaming=True  # This enables auto-play/streaming
         )
     except Exception as e:
         logger.warning(f"Failed to send promo video: {e}")
